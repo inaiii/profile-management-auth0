@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation"
 
-import { AppShell } from "@/components/app-shell"
 import { UsersTable } from "@/components/admin/users-table"
 import { auth0 } from "@/lib/auth0"
 import { listUsers } from "@/lib/auth0-management"
@@ -25,14 +24,5 @@ export default async function AdminUsersPage() {
 
   const users = await listUsers()
 
-  return (
-    <AppShell
-      session={session}
-      isAdmin={admin}
-      title="User management"
-      subtitle="Admin-only access to all Auth0 identities."
-    >
-      <UsersTable users={users} />
-    </AppShell>
-  )
+  return <UsersTable users={users} />
 }
