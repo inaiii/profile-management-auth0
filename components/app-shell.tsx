@@ -26,6 +26,8 @@ import {
 import {
   NavigationMenu,
   NavigationMenuItem,
+  NavigationMenuContent,
+  NavigationMenuTrigger,
   NavigationMenuLink,
   NavigationMenuList,
   navigationMenuTriggerStyle,
@@ -95,8 +97,26 @@ export default function AppShell({ children, user, isAdmin }: AppShellProps) {
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="bg-background">
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-          <div className="grid items-center gap-4 py-5 md:grid-cols-[1fr_auto_1fr]">
+          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-4 py-5">
             <div className="flex items-center gap-3">
+              <NavigationMenu viewport={false} className="md:hidden">
+                <NavigationMenuList>
+                  <NavigationMenuItem>
+                    <NavigationMenuTrigger>Menu</NavigationMenuTrigger>
+                    <NavigationMenuContent className="absolute left-0 top-full w-48">
+                      <ul className="flex flex-col">
+                        {navItems.map((item) => (
+                          <li key={item.href}>
+                            <NavigationMenuLink asChild>
+                              <Link href={item.href}>{item.label}</Link>
+                            </NavigationMenuLink>
+                          </li>
+                        ))}
+                      </ul>
+                    </NavigationMenuContent>
+                  </NavigationMenuItem>
+                </NavigationMenuList>
+              </NavigationMenu>
               <Avatar size="sm">
                 <AvatarImage src="/favicon.ico" alt="Site logo" />
                 <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
@@ -111,7 +131,7 @@ export default function AppShell({ children, user, isAdmin }: AppShellProps) {
               </div>
             </div>
 
-            <div className="flex justify-start md:justify-center">
+            <div className="hidden justify-center md:flex">
               <NavigationMenu>
                 <NavigationMenuList>
                   {navItems.map((item) => (
@@ -128,7 +148,7 @@ export default function AppShell({ children, user, isAdmin }: AppShellProps) {
               </NavigationMenu>
             </div>
 
-            <div className="flex items-center justify-start gap-3 md:justify-end">
+            <div className="flex items-center justify-start justify-self-end gap-3 md:justify-end">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
