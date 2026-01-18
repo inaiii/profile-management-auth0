@@ -156,6 +156,20 @@ export async function listUserAuthenticationMethods(
   return []
 }
 
+export async function deleteUserAuthenticationMethod(
+  userId: string,
+  authenticationMethodId: string
+): Promise<void> {
+  await callManagementApi<void>(
+    `/users/${encodeURIComponent(
+      userId
+    )}/authentication-methods/${encodeURIComponent(authenticationMethodId)}`,
+    {
+      method: "DELETE",
+    }
+  )
+}
+
 export async function listUserSessions(
   userId: string
 ): Promise<Auth0SessionsResponse> {
@@ -240,19 +254,4 @@ export async function resetUserMfa(userId: string): Promise<string[]> {
   )
 
   return providers
-}
-
-export async function unlinkUserIdentity(
-  userId: string,
-  provider: string,
-  identityUserId: string
-): Promise<void> {
-  await callManagementApi<void>(
-    `/users/${encodeURIComponent(userId)}/identities/${encodeURIComponent(
-      provider
-    )}/${encodeURIComponent(identityUserId)}`,
-    {
-      method: "DELETE",
-    }
-  )
 }

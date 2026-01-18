@@ -3,10 +3,11 @@
 import * as React from "react"
 import type {
   Auth0AuthenticationMethod,
-  Auth0Identity,
   Auth0Session,
   Auth0User,
 } from "@/lib/auth0-types"
+import { HugeiconsIcon } from "@hugeicons/react"
+import { MoreHorizontalIcon } from "@hugeicons/core-free-icons"
 import { ProfileForm } from "@/components/profile/profile-form"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -19,7 +20,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import {
   Table,
@@ -92,14 +98,6 @@ export function ProfileContent({
     view === "admin"
       ? hasAny(["security:manage_passkeys"])
       : hasAny(["security:manage_passkeys_self", "security:manage_passkeys"])
-  const canManageSocial =
-    view === "admin"
-      ? hasAny(["security:manage_social_links"])
-      : hasAny([
-        "security:manage_social_links_self",
-        "security:manage_social_links",
-      ])
-
   const canReadSessions =
     view === "admin"
       ? hasAny(["sessions:read"])
@@ -112,16 +110,6 @@ export function ProfileContent({
   const showSecurityTab =
     canReadSecurity || canWriteSecurity || canChangePassword || canResetMfa
   const showSessionsTab = canReadSessions || canRevokeSessions
-  const showSocialTab = canReadSecurity || canManageSocial
-
-  const baseIdentities = React.useMemo(
-    () => user.identities ?? [],
-    [user.identities]
-  )
-  const initialSocialIdentities = React.useMemo(
-    () => baseIdentities.filter((identity) => identity.provider !== "auth0"),
-    [baseIdentities]
-  )
 
   const [authMethods, setAuthMethods] = React.useState<
     Auth0AuthenticationMethod[]
@@ -129,6 +117,12 @@ export function ProfileContent({
   const [authMethodsState, setAuthMethodsState] =
     React.useState<RequestState>("idle")
   const [authMethodsError, setAuthMethodsError] = React.useState<string | null>(
+    null
+  )
+  const [passkeyActionState, setPasskeyActionState] =
+    React.useState<RequestState>("idle")
+  const [passkeyError, setPasskeyError] = React.useState<string | null>(null)
+  const [revokePasskeyId, setRevokePasskeyId] = React.useState<string | null>(
     null
   )
 
@@ -150,12 +144,6 @@ export function ProfileContent({
   const [mfaState, setMfaState] = React.useState<RequestState>("idle")
   const [mfaError, setMfaError] = React.useState<string | null>(null)
 
-  const [linkedIdentities, setLinkedIdentities] = React.useState<Auth0Identity[]>(
-    () => initialSocialIdentities
-  )
-  const [socialState, setSocialState] = React.useState<RequestState>("idle")
-  const [socialError, setSocialError] = React.useState<string | null>(null)
-
   const mfaMethods = React.useMemo(
     () =>
       authMethods.filter(
@@ -169,21 +157,21 @@ export function ProfileContent({
   )
 
   React.useEffect(() => {
-    setLinkedIdentities(initialSocialIdentities)
     setPasswordTicket(null)
     setPasswordState("idle")
     setPasswordError(null)
     setAuthMethodsState("idle")
     setAuthMethodsError(null)
+    setPasskeyActionState("idle")
+    setPasskeyError(null)
+    setRevokePasskeyId(null)
     setMfaState("idle")
     setMfaError(null)
     setSessionsState("idle")
     setSessionsError(null)
     setSessionsActionState("idle")
     setRevokeSessionId(null)
-    setSocialState("idle")
-    setSocialError(null)
-  }, [user.user_id, initialSocialIdentities])
+  }, [user.user_id])
 
   const formatProviderName = (value: string) =>
     value
@@ -192,6 +180,12 @@ export function ProfileContent({
 
   const formatAuthMethodLabel = (method: Auth0AuthenticationMethod) =>
     method.name?.trim().length ? method.name : formatProviderName(method.type)
+
+  const formatAuthMethodDate = (value?: string) =>
+    value ? new Date(value).toLocaleString() : "—"
+
+  const formatAuthMethodName = (method: Auth0AuthenticationMethod) =>
+    method.name ?? method.id
 
   const formatSessionDate = (value?: string) =>
     value ? new Date(value).toLocaleString() : "—"
@@ -237,6 +231,44 @@ export function ProfileContent({
       )
     }
   }, [apiUserId, canReadSecurity, showSecurityTab])
+
+  const handleRevokePasskey = async (method: Auth0AuthenticationMethod) => {
+    if (!canManagePasskeys) {
+      return
+    }
+
+    setRevokePasskeyId(method.id)
+    setPasskeyActionState("loading")
+    setPasskeyError(null)
+
+    try {
+      const response = await fetch(
+        `/api/management/users/${encodeURIComponent(
+          apiUserId
+        )}/authentication-methods/${encodeURIComponent(method.id)}`,
+        {
+          method: "DELETE",
+        }
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.error ?? "Failed to revoke passkey.")
+      }
+
+      setAuthMethods((current) =>
+        current.filter((item) => item.id !== method.id)
+      )
+      setPasskeyActionState("success")
+    } catch (error) {
+      setPasskeyActionState("error")
+      setPasskeyError(
+        error instanceof Error ? error.message : "Failed to revoke passkey."
+      )
+    } finally {
+      setRevokePasskeyId(null)
+    }
+  }
 
   const loadSessions = React.useCallback(async () => {
     if (!showSessionsTab || !canReadSessions) {
@@ -411,51 +443,6 @@ export function ProfileContent({
     }
   }
 
-  const handleUnlinkIdentity = async (identity: Auth0Identity) => {
-    if (!canManageSocial) {
-      return
-    }
-
-    setSocialState("loading")
-    setSocialError(null)
-
-    try {
-      const response = await fetch(
-        `/api/management/users/${encodeURIComponent(apiUserId)}/identities`,
-        {
-          method: "DELETE",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            provider: identity.provider,
-            identityUserId: identity.user_id,
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}))
-        throw new Error(body.error ?? "Failed to unlink identity.")
-      }
-
-      setLinkedIdentities((current) =>
-        current.filter(
-          (item) =>
-            !(
-              item.provider === identity.provider &&
-              item.user_id === identity.user_id
-            )
-        )
-      )
-      setSocialState("success")
-    } catch (error) {
-      setSocialState("error")
-      setSocialError(
-        error instanceof Error ? error.message : "Unlink failed."
-      )
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -496,9 +483,6 @@ export function ProfileContent({
           {showSessionsTab ? (
             <TabsTrigger value="sessions">Sessions</TabsTrigger>
           ) : null}
-          {showSocialTab ? (
-            <TabsTrigger value="social">Social links</TabsTrigger>
-          ) : null}
         </TabsList>
 
         <TabsContent value="profile">
@@ -517,45 +501,36 @@ export function ProfileContent({
                 </CardHeader>
               </Card>
             ) : (
-              <div className="grid gap-4 lg:grid-cols-3">
-                <Card className="lg:col-span-2">
-                  <CardHeader className="border-b">
-                    <CardTitle>Password</CardTitle>
-                    <CardDescription>
-                      Manage password reset and account recovery options.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3 pt-6 text-xs text-muted-foreground">
-                    {view === "admin" ? (
-                      <p>
-                        Generate a reset link for this account from Auth0.
+              <div className="space-y-4">
+                <Card className="p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">Password</div>
+                      <p className="text-xs text-muted-foreground">
+                        {view === "admin"
+                          ? "Generate a reset link for this account."
+                          : "Request a password reset link issued by Auth0."}
                       </p>
-                    ) : (
-                      <p>
-                        Request a password reset link issued by Auth0.
-                      </p>
-                    )}
-                    {passwordTicket ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary">Reset link ready</Badge>
-                        <Button asChild variant="outline" size="xs">
-                          <a
-                            href={passwordTicket}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Open link
-                          </a>
-                        </Button>
-                      </div>
-                    ) : null}
-                    {passwordError ? (
-                      <div className="text-destructive text-xs">
-                        {passwordError}
-                      </div>
-                    ) : null}
-                  </CardContent>
-                  <CardFooter className="flex flex-wrap gap-2">
+                      {passwordTicket ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary">Reset link ready</Badge>
+                          <Button asChild variant="outline" size="xs">
+                            <a
+                              href={passwordTicket}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open link
+                            </a>
+                          </Button>
+                        </div>
+                      ) : null}
+                      {passwordError ? (
+                        <div className="text-destructive text-xs">
+                          {passwordError}
+                        </div>
+                      ) : null}
+                    </div>
                     <Button
                       size="sm"
                       onClick={handlePasswordReset}
@@ -567,44 +542,107 @@ export function ProfileContent({
                           ? "Generate reset link"
                           : "Change password"}
                     </Button>
-                  </CardFooter>
+                  </div>
                 </Card>
 
-                <Card>
-                  <CardHeader className="border-b">
-                    <CardTitle>MFA</CardTitle>
-                    <CardDescription>
-                      Require multi-factor authentication for sign-in.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4 pt-6">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">MFA required</span>
-                      <Switch checked={mfaMethods.length > 0} disabled />
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs">
+                <Card className="space-y-3 p-4">
+                  <div>
+                    <div className="text-sm font-medium">Passkeys</div>
+                    <p className="text-xs text-muted-foreground">
+                      Manage FIDO2 passkeys associated with this account.
+                    </p>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Last used</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {authMethodsState === "loading" ? (
-                        <Badge variant="outline">Loading MFA</Badge>
-                      ) : mfaMethods.length ? (
-                        mfaMethods.map((method) => (
-                          <Badge key={method.id} variant="outline">
-                            {formatAuthMethodLabel(method)}
-                          </Badge>
+                        <TableRow>
+                          <TableCell
+                            colSpan={3}
+                            className="text-muted-foreground"
+                          >
+                            Loading passkeys...
+                          </TableCell>
+                        </TableRow>
+                      ) : passkeyMethods.length ? (
+                        passkeyMethods.map((method) => (
+                          <TableRow key={method.id}>
+                            <TableCell>
+                              <div className="text-xs font-medium">
+                                {formatAuthMethodName(method)}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {method.user_agent ?? "Unknown device"}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {formatAuthMethodDate(
+                                method.last_auth_at ?? method.enrolled_at
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="xs">
+                                    <HugeiconsIcon
+                                      icon={MoreHorizontalIcon}
+                                      strokeWidth={2}
+                                      aria-hidden="true"
+                                    />
+                                    <span className="sr-only">Open menu</span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => handleRevokePasskey(method)}
+                                    disabled={
+                                      !canManagePasskeys ||
+                                      passkeyActionState === "loading" ||
+                                      revokePasskeyId === method.id
+                                    }
+                                  >
+                                    {revokePasskeyId === method.id
+                                      ? "Revoking..."
+                                      : "Revoke passkey"}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
                         ))
                       ) : (
-                        <Badge variant="outline">No MFA enrollments</Badge>
+                        <TableRow>
+                          <TableCell
+                            colSpan={3}
+                            className="text-muted-foreground"
+                          >
+                            No passkeys registered.
+                          </TableCell>
+                        </TableRow>
                       )}
+                    </TableBody>
+                  </Table>
+                  {passkeyError ? (
+                    <div className="text-destructive text-xs">
+                      {passkeyError}
                     </div>
-                    {authMethodsError ? (
-                      <div className="text-destructive text-xs">
-                        {authMethodsError}
-                      </div>
-                    ) : null}
-                    {mfaError ? (
-                      <div className="text-destructive text-xs">{mfaError}</div>
-                    ) : null}
-                  </CardContent>
-                  <CardFooter>
+                  ) : null}
+                </Card>
+
+                <Card className="space-y-3 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium">MFA</div>
+                      <p className="text-xs text-muted-foreground">
+                        Multi-factor authentication status and reset.
+                      </p>
+                    </div>
                     <Button
                       size="sm"
                       variant="outline"
@@ -613,55 +651,32 @@ export function ProfileContent({
                     >
                       {mfaState === "loading" ? "Resetting..." : "Reset MFA"}
                     </Button>
-                  </CardFooter>
-                </Card>
-
-                <Card className="lg:col-span-3">
-                  <CardHeader className="border-b">
-                    <CardTitle>Passkeys</CardTitle>
-                    <CardDescription>
-                      Manage FIDO2 passkeys associated with this account.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3 pt-6 text-xs text-muted-foreground">
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">MFA required</span>
+                    <Switch checked={mfaMethods.length > 0} disabled />
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
                     {authMethodsState === "loading" ? (
-                      <p>Loading passkeys...</p>
-                    ) : passkeyMethods.length ? (
-                      <>
-                        <div className="flex flex-wrap gap-2">
-                          {passkeyMethods.map((method, index) => (
-                            <Badge
-                              key={method.id}
-                              variant="outline"
-                            >
-                              {method.name ?? `Passkey ${index + 1}`}
-                            </Badge>
-                          ))}
-                        </div>
-                        <Separator />
-                        <div className="flex items-center justify-between">
-                          <span>Registered</span>
-                          <span className="font-medium">
-                            {passkeyMethods.length}
-                          </span>
-                        </div>
-                      </>
+                      <Badge variant="outline">Loading MFA</Badge>
+                    ) : mfaMethods.length ? (
+                      mfaMethods.map((method) => (
+                        <Badge key={method.id} variant="outline">
+                          {formatAuthMethodLabel(method)}
+                        </Badge>
+                      ))
                     ) : (
-                      <p>No passkeys registered.</p>
+                      <Badge variant="outline">No MFA enrollments</Badge>
                     )}
-                  </CardContent>
-                  <CardFooter className="flex flex-wrap gap-2">
-                    <Button size="sm" disabled={!canManagePasskeys}>
-                      Add passkey
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!canManagePasskeys}
-                    >
-                      Remove passkey
-                    </Button>
-                  </CardFooter>
+                  </div>
+                  {authMethodsError ? (
+                    <div className="text-destructive text-xs">
+                      {authMethodsError}
+                    </div>
+                  ) : null}
+                  {mfaError ? (
+                    <div className="text-destructive text-xs">{mfaError}</div>
+                  ) : null}
                 </Card>
               </div>
             )}
@@ -680,91 +695,14 @@ export function ProfileContent({
                 </CardHeader>
               </Card>
             ) : (
-              <Card>
-                <CardHeader className="border-b">
-                  <CardTitle>Active sessions</CardTitle>
-                  <CardDescription>
-                    Review devices and revoke active sessions.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Device</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead>Last active</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sessionsState === "loading" ? (
-                        <TableRow>
-                          <TableCell
-                            colSpan={5}
-                            className="text-muted-foreground"
-                          >
-                            Loading sessions from Auth0...
-                          </TableCell>
-                        </TableRow>
-                      ) : sessions.length ? (
-                        sessions.map((session) => {
-                          const lastActive =
-                            session.last_interacted_at ||
-                            session.authenticated_at ||
-                            session.created_at
-
-                          return (
-                            <TableRow key={session.id}>
-                              <TableCell className="text-muted-foreground">
-                                {formatSessionDevice(session)}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {formatSessionLocation(session)}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {formatSessionDate(lastActive)}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">Active</Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  onClick={() => handleRevokeSession(session.id)}
-                                  disabled={
-                                    !canRevokeSessions ||
-                                    revokeSessionId === session.id ||
-                                    sessionsActionState === "loading"
-                                  }
-                                >
-                                  {revokeSessionId === session.id
-                                    ? "Revoking..."
-                                    : "Revoke"}
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          )
-                        })
-                      ) : (
-                        <TableRow>
-                          <TableCell
-                            colSpan={5}
-                            className="text-muted-foreground"
-                          >
-                            No active sessions found.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-                <CardFooter className="justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    {sessionsError ?? "Sessions are sourced from Auth0."}
-                  </span>
+              <Card className="space-y-3 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-medium">Active sessions</div>
+                    <p className="text-xs text-muted-foreground">
+                      Review devices and revoke active sessions.
+                    </p>
+                  </div>
                   <Button
                     size="sm"
                     variant="destructive"
@@ -775,94 +713,101 @@ export function ProfileContent({
                   >
                     {sessionsActionState === "loading"
                       ? "Revoking..."
-                      : "Revoke all sessions"}
+                      : "Revoke all"}
                   </Button>
-                </CardFooter>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Device</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Last active</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sessionsState === "loading" ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={5}
+                          className="text-muted-foreground"
+                        >
+                          Loading sessions from Auth0...
+                        </TableCell>
+                      </TableRow>
+                    ) : sessions.length ? (
+                      sessions.map((session) => {
+                        const lastActive =
+                          session.last_interacted_at ||
+                          session.authenticated_at ||
+                          session.created_at
+
+                        return (
+                          <TableRow key={session.id}>
+                            <TableCell className="text-muted-foreground">
+                              {formatSessionDevice(session)}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatSessionLocation(session)}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatSessionDate(lastActive)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">Active</Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="xs">
+                                    <HugeiconsIcon
+                                      icon={MoreHorizontalIcon}
+                                      strokeWidth={2}
+                                      aria-hidden="true"
+                                    />
+                                    <span className="sr-only">Open menu</span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => handleRevokeSession(session.id)}
+                                    disabled={
+                                      !canRevokeSessions ||
+                                      revokeSessionId === session.id ||
+                                      sessionsActionState === "loading"
+                                    }
+                                  >
+                                    {revokeSessionId === session.id
+                                      ? "Revoking..."
+                                      : "Revoke session"}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })
+                    ) : (
+                      <TableRow>
+                        <TableCell
+                          colSpan={5}
+                          className="text-muted-foreground"
+                        >
+                          No active sessions found.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+                <div className="text-xs text-muted-foreground">
+                  {sessionsError ?? "Sessions are sourced from Auth0."}
+                </div>
               </Card>
             )}
           </TabsContent>
         ) : null}
 
-        {showSocialTab ? (
-          <TabsContent value="social">
-            {!canReadSecurity && !canManageSocial ? (
-              <Card>
-                <CardHeader className="border-b">
-                  <CardTitle>Social links</CardTitle>
-                  <CardDescription>
-                    You do not have permission to manage identity links.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader className="border-b">
-                  <CardTitle>Linked identities</CardTitle>
-                  <CardDescription>
-                    Connect or revoke social login providers.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Provider</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {linkedIdentities.map((identity) => (
-                        <TableRow
-                          key={`${identity.provider}-${identity.user_id}`}
-                        >
-                          <TableCell>
-                            {formatProviderName(identity.provider)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">Linked</Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="xs"
-                              variant="outline"
-                              onClick={() => handleUnlinkIdentity(identity)}
-                              disabled={
-                                !canManageSocial || socialState === "loading"
-                              }
-                            >
-                              {socialState === "loading"
-                                ? "Updating..."
-                                : "Unlink"}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {!linkedIdentities.length ? (
-                        <TableRow>
-                          <TableCell
-                            colSpan={3}
-                            className="text-muted-foreground"
-                          >
-                            No linked identities found.
-                          </TableCell>
-                        </TableRow>
-                      ) : null}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-                <CardFooter className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>
-                    Linked identities are managed via Auth0 connections.
-                  </span>
-                  {socialError ? (
-                    <span className="text-destructive">{socialError}</span>
-                  ) : null}
-                </CardFooter>
-              </Card>
-            )}
-          </TabsContent>
-        ) : null}
       </Tabs>
     </div>
   )
