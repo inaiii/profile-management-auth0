@@ -72,3 +72,20 @@ export type Auth0SessionsResponse = {
   sessions: Auth0Session[]
   next?: string
 }
+
+export type Auth0Enrollment = {
+  id: string
+  auth_method?: string
+  status?: string
+  type?: string
+  name?: string
+  identifier?: string
+  phone_number?: string
+  enrolled_at?: string
+  last_auth?: string
+}
+
+export type Auth0EnrollmentTicket = {
+  ticket_id?: string
+  ticket_url?: string
+}

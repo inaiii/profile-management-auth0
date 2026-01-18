@@ -2,6 +2,8 @@ import "server-only"
 
 import type {
   Auth0AuthenticationMethod,
+  Auth0Enrollment,
+  Auth0EnrollmentTicket,
   Auth0Session,
   Auth0SessionsResponse,
   Auth0User,
@@ -232,26 +234,48 @@ export async function createPasswordChangeTicket(
   )
 }
 
-export async function resetUserMfa(userId: string): Promise<string[]> {
-  const user = await getUser(userId)
-  const providers = user.multifactor ?? []
-
-  if (!providers.length) {
-    return []
-  }
-
-  await Promise.all(
-    providers.map((provider) =>
-      callManagementApi<void>(
-        `/users/${encodeURIComponent(userId)}/multifactor/${encodeURIComponent(
-          provider
-        )}`,
-        {
-          method: "DELETE",
-        }
-      )
-    )
+export async function listUserEnrollments(
+  userId: string
+): Promise<Auth0Enrollment[]> {
+  return callManagementApi<Auth0Enrollment[]>(
+    `/users/${encodeURIComponent(userId)}/enrollments`
   )
+}
 
-  return providers
+export async function createGuardianEnrollmentTicket(
+  payload: {
+    user_id: string
+    send_mail?: boolean
+    email?: string
+    email_locale?: string
+    allow_multiple_enrollments?: boolean
+    factor?: string
+  }
+): Promise<Auth0EnrollmentTicket> {
+  return callManagementApi<Auth0EnrollmentTicket>(
+    "/guardian/enrollments/ticket",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  )
+}
+
+export async function getGuardianEnrollment(
+  enrollmentId: string
+): Promise<Auth0Enrollment> {
+  return callManagementApi<Auth0Enrollment>(
+    `/guardian/enrollments/${encodeURIComponent(enrollmentId)}`
+  )
+}
+
+export async function deleteGuardianEnrollment(
+  enrollmentId: string
+): Promise<void> {
+  await callManagementApi<void>(
+    `/guardian/enrollments/${encodeURIComponent(enrollmentId)}`,
+    {
+      method: "DELETE",
+    }
+  )
 }

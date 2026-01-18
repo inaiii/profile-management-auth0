@@ -3,6 +3,8 @@
 import * as React from "react"
 import type {
   Auth0AuthenticationMethod,
+  Auth0Enrollment,
+  Auth0EnrollmentTicket,
   Auth0Session,
   Auth0User,
 } from "@/lib/auth0-types"
@@ -141,16 +143,23 @@ export function ProfileContent({
   const [passwordError, setPasswordError] = React.useState<string | null>(null)
   const [passwordTicket, setPasswordTicket] = React.useState<string | null>(null)
 
-  const [mfaState, setMfaState] = React.useState<RequestState>("idle")
-  const [mfaError, setMfaError] = React.useState<string | null>(null)
-
-  const mfaMethods = React.useMemo(
-    () =>
-      authMethods.filter(
-        (method) => method.type !== "passkey" && method.type !== "password"
-      ),
-    [authMethods]
+  const [enrollments, setEnrollments] = React.useState<Auth0Enrollment[]>([])
+  const [enrollmentsState, setEnrollmentsState] =
+    React.useState<RequestState>("idle")
+  const [enrollmentsError, setEnrollmentsError] = React.useState<string | null>(
+    null
   )
+  const [enrollmentActionState, setEnrollmentActionState] =
+    React.useState<RequestState>("idle")
+  const [revokeEnrollmentId, setRevokeEnrollmentId] =
+    React.useState<string | null>(null)
+  const [enrollmentTicket, setEnrollmentTicket] =
+    React.useState<Auth0EnrollmentTicket | null>(null)
+  const [enrollmentTicketState, setEnrollmentTicketState] =
+    React.useState<RequestState>("idle")
+  const [enrollmentTicketError, setEnrollmentTicketError] =
+    React.useState<string | null>(null)
+
   const passkeyMethods = React.useMemo(
     () => authMethods.filter((method) => method.type === "passkey"),
     [authMethods]
@@ -165,8 +174,13 @@ export function ProfileContent({
     setPasskeyActionState("idle")
     setPasskeyError(null)
     setRevokePasskeyId(null)
-    setMfaState("idle")
-    setMfaError(null)
+    setEnrollmentsState("idle")
+    setEnrollmentsError(null)
+    setEnrollmentActionState("idle")
+    setRevokeEnrollmentId(null)
+    setEnrollmentTicket(null)
+    setEnrollmentTicketState("idle")
+    setEnrollmentTicketError(null)
     setSessionsState("idle")
     setSessionsError(null)
     setSessionsActionState("idle")
@@ -178,14 +192,20 @@ export function ProfileContent({
       .replace(/[-_]+/g, " ")
       .replace(/\b\w/g, (char) => char.toUpperCase())
 
-  const formatAuthMethodLabel = (method: Auth0AuthenticationMethod) =>
-    method.name?.trim().length ? method.name : formatProviderName(method.type)
-
   const formatAuthMethodDate = (value?: string) =>
     value ? new Date(value).toLocaleString() : "—"
 
   const formatAuthMethodName = (method: Auth0AuthenticationMethod) =>
     method.name ?? method.id
+
+  const formatEnrollmentName = (enrollment: Auth0Enrollment) =>
+    enrollment.name ??
+    enrollment.phone_number ??
+    enrollment.identifier ??
+    formatProviderName(enrollment.auth_method ?? enrollment.type ?? "mfa")
+
+  const formatEnrollmentDate = (value?: string) =>
+    value ? new Date(value).toLocaleString() : "—"
 
   const formatSessionDate = (value?: string) =>
     value ? new Date(value).toLocaleString() : "—"
@@ -228,6 +248,38 @@ export function ProfileContent({
       setAuthMethodsState("error")
       setAuthMethodsError(
         error instanceof Error ? error.message : "Failed to load MFA data."
+      )
+    }
+  }, [apiUserId, canReadSecurity, showSecurityTab])
+
+  const loadEnrollments = React.useCallback(async () => {
+    if (!showSecurityTab || !canReadSecurity) {
+      setEnrollments([])
+      return
+    }
+
+    setEnrollmentsState("loading")
+    setEnrollmentsError(null)
+
+    try {
+      const response = await fetch(
+        `/api/management/users/${encodeURIComponent(apiUserId)}/enrollments`
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.error ?? "Failed to load MFA enrollments.")
+      }
+
+      const data = (await response.json()) as {
+        enrollments?: Auth0Enrollment[]
+      }
+      setEnrollments(data.enrollments ?? [])
+      setEnrollmentsState("success")
+    } catch (error) {
+      setEnrollmentsState("error")
+      setEnrollmentsError(
+        error instanceof Error ? error.message : "Failed to load MFA enrollments."
       )
     }
   }, [apiUserId, canReadSecurity, showSecurityTab])
@@ -307,6 +359,10 @@ export function ProfileContent({
   }, [loadAuthMethods])
 
   React.useEffect(() => {
+    loadEnrollments()
+  }, [loadEnrollments])
+
+  React.useEffect(() => {
     loadSessions()
   }, [loadSessions])
 
@@ -348,34 +404,88 @@ export function ProfileContent({
     }
   }
 
-  const handleResetMfa = async () => {
-    if (!canResetMfa) {
+  const handleCreateEnrollmentTicket = async () => {
+    if (!canWriteSecurity) {
       return
     }
 
-    setMfaState("loading")
-    setMfaError(null)
+    setEnrollmentTicketState("loading")
+    setEnrollmentTicketError(null)
 
     try {
       const response = await fetch(
-        `/api/management/users/${encodeURIComponent(
-          apiUserId
-        )}/security/mfa/reset`,
+        "/api/management/guardian/enrollments/ticket",
         {
           method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: view === "admin" ? user.user_id : undefined,
+          }),
         }
       )
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}))
-        throw new Error(body.error ?? "Failed to reset MFA.")
+        throw new Error(body.error ?? "Failed to create enrollment ticket.")
       }
 
-      setMfaState("success")
-      await loadAuthMethods()
+      const data = (await response.json()) as {
+        ticket?: Auth0EnrollmentTicket
+      }
+      const ticket = data.ticket ?? null
+      setEnrollmentTicket(ticket)
+      setEnrollmentTicketState("success")
+
+      if (ticket?.ticket_url) {
+        window.open(ticket.ticket_url, "_blank", "noopener,noreferrer")
+      }
     } catch (error) {
-      setMfaState("error")
-      setMfaError(error instanceof Error ? error.message : "MFA reset failed.")
+      setEnrollmentTicketState("error")
+      setEnrollmentTicketError(
+        error instanceof Error
+          ? error.message
+          : "Failed to create enrollment ticket."
+      )
+    }
+  }
+
+  const handleRevokeEnrollment = async (enrollment: Auth0Enrollment) => {
+    if (!canResetMfa) {
+      return
+    }
+
+    setRevokeEnrollmentId(enrollment.id)
+    setEnrollmentActionState("loading")
+    setEnrollmentsError(null)
+
+    try {
+      const response = await fetch(
+        `/api/management/guardian/enrollments/${encodeURIComponent(
+          enrollment.id
+        )}`,
+        {
+          method: "DELETE",
+        }
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.error ?? "Failed to revoke enrollment.")
+      }
+
+      setEnrollments((current) =>
+        current.filter((item) => item.id !== enrollment.id)
+      )
+      setEnrollmentActionState("success")
+    } catch (error) {
+      setEnrollmentActionState("error")
+      setEnrollmentsError(
+        error instanceof Error ? error.message : "Failed to revoke enrollment."
+      )
+    } finally {
+      setRevokeEnrollmentId(null)
     }
   }
 
@@ -633,49 +743,157 @@ export function ProfileContent({
                       {passkeyError}
                     </div>
                   ) : null}
-                </Card>
-
-                <Card className="space-y-3 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-medium">MFA</div>
-                      <p className="text-xs text-muted-foreground">
-                        Multi-factor authentication status and reset.
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleResetMfa}
-                      disabled={!canResetMfa || mfaState === "loading"}
-                    >
-                      {mfaState === "loading" ? "Resetting..." : "Reset MFA"}
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">MFA required</span>
-                    <Switch checked={mfaMethods.length > 0} disabled />
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {authMethodsState === "loading" ? (
-                      <Badge variant="outline">Loading MFA</Badge>
-                    ) : mfaMethods.length ? (
-                      mfaMethods.map((method) => (
-                        <Badge key={method.id} variant="outline">
-                          {formatAuthMethodLabel(method)}
-                        </Badge>
-                      ))
-                    ) : (
-                      <Badge variant="outline">No MFA enrollments</Badge>
-                    )}
-                  </div>
                   {authMethodsError ? (
                     <div className="text-destructive text-xs">
                       {authMethodsError}
                     </div>
                   ) : null}
-                  {mfaError ? (
-                    <div className="text-destructive text-xs">{mfaError}</div>
+                </Card>
+
+                <Card className="space-y-3 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-sm font-medium">MFA</div>
+                      <p className="text-xs text-muted-foreground">
+                        Manage multi-factor enrollments for this account.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleCreateEnrollmentTicket}
+                      disabled={
+                        !canWriteSecurity ||
+                        enrollmentTicketState === "loading"
+                      }
+                    >
+                      {enrollmentTicketState === "loading"
+                        ? "Generating..."
+                        : "Add MFA"}
+                    </Button>
+                  </div>
+                  {enrollmentTicket?.ticket_url ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary">Enrollment link ready</Badge>
+                      <Button asChild variant="outline" size="xs">
+                        <a
+                          href={enrollmentTicket.ticket_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open link
+                        </a>
+                      </Button>
+                    </div>
+                  ) : null}
+                  {enrollmentTicketError ? (
+                    <div className="text-destructive text-xs">
+                      {enrollmentTicketError}
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">MFA enabled</span>
+                    <Switch checked={enrollments.length > 0} disabled />
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Last used</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {enrollmentsState === "loading" ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={4}
+                            className="text-muted-foreground"
+                          >
+                            Loading enrollments...
+                          </TableCell>
+                        </TableRow>
+                      ) : enrollments.length ? (
+                        enrollments.map((enrollment) => (
+                          <TableRow key={enrollment.id}>
+                            <TableCell>
+                              <div className="text-xs font-medium">
+                                {formatEnrollmentName(enrollment)}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {formatProviderName(
+                                  enrollment.auth_method ??
+                                    enrollment.type ??
+                                    "mfa"
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  enrollment.status === "confirmed"
+                                    ? "secondary"
+                                    : "outline"
+                                }
+                              >
+                                {enrollment.status ?? "pending"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {formatEnrollmentDate(
+                                enrollment.last_auth ?? enrollment.enrolled_at
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="xs">
+                                    <HugeiconsIcon
+                                      icon={MoreHorizontalIcon}
+                                      strokeWidth={2}
+                                      aria-hidden="true"
+                                    />
+                                    <span className="sr-only">
+                                      Open menu
+                                    </span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      handleRevokeEnrollment(enrollment)
+                                    }
+                                    disabled={
+                                      !canResetMfa ||
+                                      enrollmentActionState === "loading" ||
+                                      revokeEnrollmentId === enrollment.id
+                                    }
+                                  >
+                                    {revokeEnrollmentId === enrollment.id
+                                      ? "Revoking..."
+                                      : "Revoke MFA"}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={4}
+                            className="text-muted-foreground"
+                          >
+                            No MFA enrollments found.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                  {enrollmentsError ? (
+                    <div className="text-destructive text-xs">
+                      {enrollmentsError}
+                    </div>
                   ) : null}
                 </Card>
               </div>

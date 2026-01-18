@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { auth0 } from "@/lib/auth0"
-import { resetUserMfa } from "@/lib/auth0-management"
+import { listUserEnrollments } from "@/lib/auth0-management"
 import { getAccessTokenPermissions } from "@/lib/auth0-permissions"
 
 type RouteContext = {
@@ -15,7 +15,19 @@ function resolveUserId(sessionUserId: string | undefined, id: string) {
   return id
 }
 
-export async function POST(_: Request, { params }: RouteContext) {
+function canAccessUser(
+  sessionUserId: string | undefined,
+  targetUserId: string,
+  canReadAny: boolean,
+  canReadSelf: boolean
+) {
+  if (canReadAny) {
+    return true
+  }
+  return sessionUserId === targetUserId && canReadSelf
+}
+
+export async function GET(_: Request, { params }: RouteContext) {
   const session = await auth0.getSession()
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -23,19 +35,21 @@ export async function POST(_: Request, { params }: RouteContext) {
 
   const { id } = await params
   const targetUserId = resolveUserId(session.user.sub, id)
-  if (!targetUserId) {
-    return NextResponse.json({ error: "Invalid user id" }, { status: 400 })
-  }
-
   const permissions = await getAccessTokenPermissions()
-  const isSelf = session.user.sub === targetUserId
-  const canSelf = permissions.includes("security:reset_mfa_self")
-  const canAdmin = permissions.includes("security:reset_mfa")
+  const canReadAny = permissions.includes("security:read")
+  const canReadSelf = permissions.includes("security:read_self")
 
-  if (!canAdmin && !(isSelf && canSelf)) {
+  if (
+    !canAccessUser(
+      session.user.sub,
+      targetUserId,
+      canReadAny,
+      canReadSelf
+    )
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
-  const providers = await resetUserMfa(targetUserId)
-  return NextResponse.json({ providers })
+  const enrollments = await listUserEnrollments(targetUserId)
+  return NextResponse.json({ enrollments })
 }
