@@ -80,10 +80,10 @@ export function ProfileContent({
     view === "admin"
       ? hasAny(["security:force_password_reset", "security:set_password"])
       : hasAny([
-          "security:change_password_self",
-          "security:force_password_reset",
-          "security:set_password",
-        ])
+        "security:change_password_self",
+        "security:force_password_reset",
+        "security:set_password",
+      ])
   const canResetMfa =
     view === "admin"
       ? hasAny(["security:reset_mfa"])
@@ -96,9 +96,9 @@ export function ProfileContent({
     view === "admin"
       ? hasAny(["security:manage_social_links"])
       : hasAny([
-          "security:manage_social_links_self",
-          "security:manage_social_links",
-        ])
+        "security:manage_social_links_self",
+        "security:manage_social_links",
+      ])
 
   const canReadSessions =
     view === "admin"
@@ -459,14 +459,10 @@ export function ProfileContent({
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Profile summary</CardTitle>
-          <CardDescription>Current identity details and activity.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-6 pt-6 md:grid-cols-[auto_1fr] md:items-center">
+      <Card >
+        <CardContent className="grid gap-6  md:grid-cols-[auto_1fr] md:items-center">
           <div className="flex items-center gap-4">
-            <Avatar>
+            <Avatar data-size="size-20">
               {user.picture ? (
                 <AvatarImage src={user.picture} alt={user.name ?? ""} />
               ) : null}
@@ -475,45 +471,18 @@ export function ProfileContent({
               </AvatarFallback>
             </Avatar>
             <div className="space-y-1">
-              <div className="text-sm font-medium">{user.name ?? "Unnamed"}</div>
-              <div className="text-xs text-muted-foreground">
-                {user.email ?? user.user_id}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant={user.blocked ? "destructive" : "secondary"}>
-                  {user.blocked ? "Blocked" : "Active"}
-                </Badge>
-                <Badge variant="outline">
-                  {user.user_metadata?.locale ?? "Locale: default"}
-                </Badge>
+              <div className="text-xl font-medium">{user.name ?? "Unnamed"}</div>
+              <div className="flex ">
+                <span className="text-muted-foreground">user_id:</span>
+                {/* <span className="font-medium">{user.user_id}</span> */}
+                <Badge variant={'secondary'}>{user.user_id}</Badge>
               </div>
             </div>
           </div>
-          <div className="grid gap-3 text-xs sm:grid-cols-2">
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">User ID</span>
-              <span className="font-medium">{user.user_id}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">Last login</span>
-              <span className="font-medium">
-                {user.last_login
-                  ? new Date(user.last_login).toLocaleString()
-                  : "No activity"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">Logins</span>
-              <span className="font-medium">{user.logins_count ?? 0}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">Created</span>
-              <span className="font-medium">
-                {user.created_at
-                  ? new Date(user.created_at).toLocaleDateString()
-                  : "Unknown"}
-              </span>
-            </div>
+          <div className="justify-self-end">
+            <Badge className="h-10" variant={user.blocked ? "destructive" : "secondary"}>
+              {user.blocked ? "Blocked" : "Active"}
+            </Badge>
           </div>
         </CardContent>
       </Card>
