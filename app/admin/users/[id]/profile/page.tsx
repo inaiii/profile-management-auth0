@@ -41,5 +41,5 @@ export default async function AdminUserProfilePage({
 
   const user = await getUser(userId)
 
-  return <ProfileContent user={user} />
+  return <ProfileContent user={user} permissions={permissions} view="admin" />
 }

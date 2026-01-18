@@ -73,7 +73,13 @@ function cleanOptional(value: string | undefined) {
   return trimmed.length ? trimmed : undefined
 }
 
-export function ProfileForm({ user }: { user: Auth0User }) {
+export function ProfileForm({
+  user,
+  canEdit = true,
+}: {
+  user: Auth0User
+  canEdit?: boolean
+}) {
   const [status, setStatus] = React.useState<"idle" | "saving" | "saved">(
     "idle"
   )
@@ -108,6 +114,9 @@ export function ProfileForm({ user }: { user: Auth0User }) {
   })
 
   const onSubmit = async (values: ProfileValues) => {
+    if (!canEdit) {
+      return
+    }
     setStatus("saving")
     setError(null)
 
@@ -163,8 +172,12 @@ export function ProfileForm({ user }: { user: Auth0User }) {
             Update your Auth0 profile data and shared metadata fields.
           </CardDescription>
           <CardAction>
-            <Badge variant={form.formState.isDirty ? "secondary" : "outline"}>
-              {form.formState.isDirty ? "Draft" : "Synced"}
+            <Badge variant={canEdit ? "outline" : "secondary"}>
+              {canEdit
+                ? form.formState.isDirty
+                  ? "Draft"
+                  : "Synced"
+                : "Read-only"}
             </Badge>
           </CardAction>
         </CardHeader>
@@ -177,6 +190,7 @@ export function ProfileForm({ user }: { user: Auth0User }) {
                   id="profile-name"
                   placeholder="Full name"
                   aria-invalid={!!form.formState.errors.name}
+                  disabled={!canEdit}
                   {...form.register("name")}
                 />
                 <FieldError errors={[form.formState.errors.name]} />
@@ -200,6 +214,7 @@ export function ProfileForm({ user }: { user: Auth0User }) {
                   id="profile-given-name"
                   placeholder="First name"
                   aria-invalid={!!form.formState.errors.givenName}
+                  disabled={!canEdit}
                   {...form.register("givenName")}
                 />
                 <FieldError errors={[form.formState.errors.givenName]} />
@@ -210,6 +225,7 @@ export function ProfileForm({ user }: { user: Auth0User }) {
                   id="profile-family-name"
                   placeholder="Last name"
                   aria-invalid={!!form.formState.errors.familyName}
+                  disabled={!canEdit}
                   {...form.register("familyName")}
                 />
                 <FieldError errors={[form.formState.errors.familyName]} />
@@ -221,6 +237,7 @@ export function ProfileForm({ user }: { user: Auth0User }) {
                 id="profile-nickname"
                 placeholder="Nickname"
                 aria-invalid={!!form.formState.errors.nickname}
+                disabled={!canEdit}
                 {...form.register("nickname")}
               />
               <FieldError errors={[form.formState.errors.nickname]} />
@@ -232,6 +249,7 @@ export function ProfileForm({ user }: { user: Auth0User }) {
                   id="profile-title"
                   placeholder="Job title"
                   aria-invalid={!!form.formState.errors.title}
+                  disabled={!canEdit}
                   {...form.register("title")}
                 />
                 <FieldError errors={[form.formState.errors.title]} />
@@ -242,6 +260,7 @@ export function ProfileForm({ user }: { user: Auth0User }) {
                   id="profile-department"
                   placeholder="Department"
                   aria-invalid={!!form.formState.errors.department}
+                  disabled={!canEdit}
                   {...form.register("department")}
                 />
                 <FieldError errors={[form.formState.errors.department]} />
@@ -254,7 +273,11 @@ export function ProfileForm({ user }: { user: Auth0User }) {
                   control={form.control}
                   name="locale"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={!canEdit}
+                    >
                       <SelectTrigger
                         id="profile-locale"
                         className="w-full"
@@ -281,7 +304,11 @@ export function ProfileForm({ user }: { user: Auth0User }) {
                   control={form.control}
                   name="timezone"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={!canEdit}
+                    >
                       <SelectTrigger
                         id="profile-timezone"
                         className="w-full"
@@ -311,6 +338,7 @@ export function ProfileForm({ user }: { user: Auth0User }) {
                 rows={3}
                 placeholder="Short internal summary"
                 aria-invalid={!!form.formState.errors.bio}
+                disabled={!canEdit}
                 {...form.register("bio")}
               />
               <FieldDescription>Max 160 characters.</FieldDescription>
@@ -333,11 +361,15 @@ export function ProfileForm({ user }: { user: Auth0User }) {
               variant="outline"
               size="sm"
               onClick={() => form.reset()}
-              disabled={status === "saving"}
+              disabled={!canEdit || status === "saving"}
             >
               Reset
             </Button>
-            <Button type="submit" size="sm" disabled={status === "saving"}>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!canEdit || status === "saving"}
+            >
               {status === "saving" ? "Saving..." : "Save profile"}
             </Button>
           </div>

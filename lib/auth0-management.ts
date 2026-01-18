@@ -1,6 +1,11 @@
 import "server-only"
 
-import type { Auth0User } from "@/lib/auth0-types"
+import type {
+  Auth0AuthenticationMethod,
+  Auth0Session,
+  Auth0SessionsResponse,
+  Auth0User,
+} from "@/lib/auth0-types"
 
 type TokenCache = {
   accessToken: string
@@ -91,7 +96,16 @@ async function callManagementApi<T>(
     )
   }
 
-  return response.json() as Promise<T>
+  if (response.status === 204) {
+    return null as T
+  }
+
+  const text = await response.text()
+  if (!text) {
+    return null as T
+  }
+
+  return JSON.parse(text) as T
 }
 
 export async function listUsers(query?: string): Promise<Auth0User[]> {
@@ -117,6 +131,128 @@ export async function updateUser(
     {
       method: "PATCH",
       body: JSON.stringify(payload),
+    }
+  )
+}
+
+export async function listUserAuthenticationMethods(
+  userId: string
+): Promise<Auth0AuthenticationMethod[]> {
+  const result = await callManagementApi<unknown>(
+    `/users/${encodeURIComponent(userId)}/authentication-methods`
+  )
+
+  if (Array.isArray(result)) {
+    return result as Auth0AuthenticationMethod[]
+  }
+
+  if (result && typeof result === "object" && "authenticators" in result) {
+    const authenticators = (result as {
+      authenticators?: Auth0AuthenticationMethod[]
+    }).authenticators
+    return authenticators ?? []
+  }
+
+  return []
+}
+
+export async function listUserSessions(
+  userId: string
+): Promise<Auth0SessionsResponse> {
+  return callManagementApi<Auth0SessionsResponse>(
+    `/users/${encodeURIComponent(userId)}/sessions`
+  )
+}
+
+export async function revokeUserSessions(userId: string): Promise<void> {
+  await callManagementApi<void>(
+    `/users/${encodeURIComponent(userId)}/sessions`,
+    {
+      method: "DELETE",
+    }
+  )
+}
+
+export async function getSession(sessionId: string): Promise<Auth0Session> {
+  return callManagementApi<Auth0Session>(
+    `/sessions/${encodeURIComponent(sessionId)}`
+  )
+}
+
+export async function revokeSession(sessionId: string): Promise<void> {
+  await callManagementApi<void>(
+    `/sessions/${encodeURIComponent(sessionId)}/revoke`,
+    {
+      method: "POST",
+    }
+  )
+}
+
+type PasswordChangeTicketResponse = {
+  ticket: string
+}
+
+export async function createPasswordChangeTicket(
+  userId: string
+): Promise<PasswordChangeTicketResponse> {
+  const payload: Record<string, string> = {
+    user_id: userId,
+  }
+
+  const connectionId = process.env.AUTH0_PASSWORD_CONNECTION_ID
+  if (connectionId) {
+    payload.connection_id = connectionId
+  }
+
+  const resultUrl = process.env.AUTH0_PASSWORD_RESET_REDIRECT_URL
+  if (resultUrl) {
+    payload.result_url = resultUrl
+  }
+
+  return callManagementApi<PasswordChangeTicketResponse>(
+    "/tickets/password-change",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  )
+}
+
+export async function resetUserMfa(userId: string): Promise<string[]> {
+  const user = await getUser(userId)
+  const providers = user.multifactor ?? []
+
+  if (!providers.length) {
+    return []
+  }
+
+  await Promise.all(
+    providers.map((provider) =>
+      callManagementApi<void>(
+        `/users/${encodeURIComponent(userId)}/multifactor/${encodeURIComponent(
+          provider
+        )}`,
+        {
+          method: "DELETE",
+        }
+      )
+    )
+  )
+
+  return providers
+}
+
+export async function unlinkUserIdentity(
+  userId: string,
+  provider: string,
+  identityUserId: string
+): Promise<void> {
+  await callManagementApi<void>(
+    `/users/${encodeURIComponent(userId)}/identities/${encodeURIComponent(
+      provider
+    )}/${encodeURIComponent(identityUserId)}`,
+    {
+      method: "DELETE",
     }
   )
 }

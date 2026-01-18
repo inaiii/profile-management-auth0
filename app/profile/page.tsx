@@ -21,5 +21,5 @@ export default async function ProfilePage() {
 
   const user = await getUser(session.user.sub)
 
-  return <ProfileContent user={user} />
+  return <ProfileContent user={user} permissions={permissions} view="self" />
 }
